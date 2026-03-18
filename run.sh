@@ -1,5 +1,5 @@
-llm_model_name=TimeLLM
-train_epochs=20
+llm_model_name=GPT2
+train_epochs=50
 llm_learning_rate=0.01
 lstm_learning_rate=0.01
 # llama_layers=32
@@ -25,7 +25,7 @@ python predictor_training.py \
   --data_path ETTh1.csv \
   --model_id ETTh1_512_96 \
   --llm_model $llm_model_name \
-  --data ETTh1 \
+  --data S_LOAD \
   --features M \
   --seq_len 16 \
   --label_len 8 \
@@ -38,8 +38,8 @@ python predictor_training.py \
   --itr 1 \
   --d_model $d_model \
   --d_ff $d_ff \
-  --freq  mi\
-  --seasonal_patterns every 15 minutes \
+  --freq  15min \
+  --seasonal_patterns "every 15 minutes" \
   --batch_size $batch_size \
   --llm_learning_rate $llm_learning_rate \
   --lstm_learning_rate $lstm_learning_rate \
