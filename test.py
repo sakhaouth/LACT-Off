@@ -15,11 +15,57 @@ from LSTM import MultiValueLSTM
 from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
+from utils.tools import load_content
+from tqdm import tqdm
+import time
+class TimeSeriesDataset(Dataset):
+    def __init__(self, data, seq_len=16, pred_len = 1):
+        self.data = torch.tensor(data.values, dtype=torch.float32)
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+            
+    def __len__(self):
+            # total possible sequences
+        return len(self.data) - self.seq_len
+
+    def __getitem__(self, idx):
+            # print(f'idx is {idx}')
+            # x: previous 5 rows
+        x = self.data[idx: idx + self.seq_len]
+
+            # y: next row
+        y = self.data[idx + self.seq_len: idx + self.seq_len + self.pred_len]
+
+            # y = y.unsqueeze(1)
+
+        return x, y
+
+def vali(test_loader, model, criterion, mae_metric, device):
+    total_loss = []
+    total_mae_loss = []
+    model.eval()
+    with torch.no_grad():
+        for i,(batch_x, batch_y) in tqdm(enumerate(test_loader)):
+            batch_x = batch_x.float().to(device)
+            batch_y = batch_y.float().to(device)
+            outputs = model(batch_x)
+            pred = outputs.detach().cpu()
+            true = batch_y.detach().cpu()
+            loss = criterion(pred, true)
+            mae_loss = mae_metric(pred, true)
+            total_loss.append(loss.item())
+            total_mae_loss.append(mae_loss.item())
+            
+    total_loss = np.average(total_loss)
+    total_mae_loss = np.average(total_mae_loss)
+    model.train()
+    return total_loss, total_mae_loss
 if __name__ == "__main__":
     print("Starting predictor training")
 
     parser = argparse.ArgumentParser(description='Time-series-prediction')
 
+    # basic config
     # basic config
     parser.add_argument('--llm', type=int, required=True, default=1, help='llm should train')
     parser.add_argument('--lstm', type=int, required=True, default=1, help='lstm should train')
@@ -94,55 +140,18 @@ if __name__ == "__main__":
     parser.add_argument('--llm_layers', type=int, default=6)
     parser.add_argument('--percent', type=int, default=100)
 
+
     args = parser.parse_args()
-    accelerator = Accelerator()
-    def vali(test_loader, model, criterion, mae_metric, device):
-        total_loss = []
-        total_mae_loss = []
-        model.eval()
-        with torch.no_grad():
-            for batch_x, batch_y in test_loader:
-                batch_x = batch_x.float().to(device)
-                batch_y = batch_y.float().to(device)
-                outputs = model(batch_x)
-                pred = outputs.detach()
-                true = batch_y
-                loss = criterion(pred, true)
-                mae_loss = mae_metric(pred, true)
-                total_loss.append(loss.item())
-                total_mae_loss.append(mae_loss.item())
-            
-        total_loss = np.average(total_loss)
-        total_mae_loss = np.average(total_mae_loss)
-        model.train()
-        return total_loss, total_mae_loss
-    class TimeSeriesDataset(Dataset):
-        def __init__(self, data, seq_len=16, pred_len = 1):
-            self.data = torch.tensor(data.values, dtype=torch.float32)
-            self.seq_len = seq_len
-            self.pred_len = pred_len
-            
-        def __len__(self):
-            # total possible sequences
-            return len(self.data) - self.seq_len
-
-        def __getitem__(self, idx):
-            # print(f'idx is {idx}')
-            # x: previous 5 rows
-            x = self.data[idx: idx + self.seq_len]
-
-            # y: next row
-            y = self.data[idx + self.seq_len: idx + self.seq_len + self.pred_len]
-
-            # y = y.unsqueeze(1)
-
-            return x, y
+    
+    print("Args in experiment:")
+    
 
     df = pd.read_csv("ETTh1.csv")
     df = df.drop(columns=["date"])
-    split_value = 1000
-    train_data = df[:split_value]
-    test_data = df[split_value:]
+    train_split_value = 700
+    test_split_value = 900
+    train_data = df[:train_split_value]
+    test_data = df[train_split_value:test_split_value]
     scaler = StandardScaler()
 
     train_st = pd.DataFrame(
@@ -170,9 +179,11 @@ if __name__ == "__main__":
     )
 
     # print(train_data)
+
     dataset = TimeSeriesDataset(train_data, seq_len=16)
     test_dataset = TimeSeriesDataset(test_data, seq_len=16)
-    batch_size = 16
+    batch_size = args.batch_size
+
     train_loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -183,9 +194,11 @@ if __name__ == "__main__":
         batch_size=batch_size,
         shuffle=False
     )
+    print(f"train_loader done")
     criterion = nn.MSELoss()
     mae_metric = nn.L1Loss()
     num_feature = train_data.shape[1]
+    args.content = load_content(args)
     time_llm_model = Model(args).float()
     trained_parameters = []
     for p in time_llm_model.parameters():
@@ -194,9 +207,10 @@ if __name__ == "__main__":
     llm_optimizer = optim.Adam(trained_parameters, lr=args.llm_learning_rate)
     model = MultiValueLSTM(input_size= num_feature , output_size= num_feature)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    epoch = 100
-    df = pd.DataFrame(columns=["lstm_train_loss", "lstm_test_loss", "lstm_test_mae", "llm_train_loss", "llm_test_loss", "llm_test_mae"])
+    epoch = args.train_epochs
+    df = pd.DataFrame(columns=["lstm_time","lstm_train_loss", "lstm_test_loss", "lstm_test_mae","llm_time", "llm_train_loss", "llm_test_loss", "llm_test_mae"])
     train_steps = len(train_loader)
+    print(f"model done")
     # lstm_scheduler = lr_scheduler.OneCycleLR(optimizer=optimizer,
                                                 # steps_per_epoch=train_steps,
                                                 # pct_start = 0.2,
@@ -207,44 +221,66 @@ if __name__ == "__main__":
     time_llm_model = time_llm_model.to(device)  
     # optimizer.to(device)
     # llm_optimizer.to(device)                                          # max_lr=0.001)
+    
     for e in range(epoch):
         model.train()
         lstm_total_loss = 0
+
         
         llm_total_loss = 0
-        for batch_x, batch_y in train_loader:
+        
+        llm_time_total = lstm_time_total = 0
+        print(f"Here is starting training for {len(train_loader)} batches")
+        for i,(batch_x, batch_y) in tqdm(enumerate(train_loader)):
             # print("iteration")
-            optimizer.zero_grad()
-            llm_optimizer.zero_grad()
+            
+            total_time = llm_time = lstm_ime = 0
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float().to(device)
             # print("New data")
             # print(batch_x)  # [10, 5, features]
             # print(batch_y)  # [10, features]
+            
             if args.lstm == 1:
+                prev = time.time()
+                optimizer.zero_grad()
                 outputs = model(batch_x)
                 loss = criterion(outputs, batch_y)
+               
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 loss.backward()
                 optimizer.step()
                 # lstm_scheduler.step()
 
                 lstm_total_loss += loss.item()
+                cur = time.time()
+                lstm_ime = cur - prev
+                total_time += lstm_ime
+                lstm_time_total += lstm_ime
             if args.llm == 1:
+                prev = time.time()
+                llm_optimizer.zero_grad()
                 outputs = time_llm_model(batch_x)
                 llm_loss = criterion(outputs, batch_y)
+                
                 llm_loss.backward()
                 llm_optimizer.step()
-                llm_total_loss += llm_loss
+                llm_total_loss += llm_loss.item()
+                cur = time.time()
+                llm_time = cur - prev
+                total_time += llm_time
+                llm_time_total += llm_time
+            print(f"Epoch {e+1}, Batch {i+1}, Total Time: {total_time:.4f}s, LSTM Time: {lstm_ime:.4f}s, {lstm_total_loss} LLM Time: {llm_time:.4f}s {llm_total_loss}")
         lstm_vali_loss =  lstm_vali_mae = llm_vali_loss = llm_vali_mae = None
         if args.lstm == 1:
             lstm_vali_loss, lstm_vali_mae = vali(test_loader, model, criterion, mae_metric,device)
         if args.llm == 1:
             llm_vali_loss, llm_vali_mae = vali(test_loader, time_llm_model, criterion, mae_metric, device)
         # row = [total_loss, valis_loss, vali_mae]
-        row = [lstm_total_loss, lstm_vali_loss, lstm_vali_mae, llm_total_loss, llm_vali_loss, llm_vali_mae]
+        # print(f"time {llm_time_total} {lstm_time_total}")
+        row = [lstm_time_total, lstm_total_loss, lstm_vali_loss, lstm_vali_mae, llm_time_total, llm_total_loss, llm_vali_loss, llm_vali_mae]
         df.loc[len(df)] = row
-        print(f"Epoch {e+1}, Loss: {lstm_total_loss}, Vali = {lstm_vali_loss, lstm_vali_mae}")
+        print(f"Epoch {e+1}, Losses = {row}")
         # print('Updating learning rate to {}'.format(lstm_scheduler.get_last_lr()[0]))
 
     df.to_csv("test_log.csv", index=True)
