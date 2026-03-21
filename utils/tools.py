@@ -242,9 +242,7 @@ def vali(args, accelerator, model, vali_data, vali_loader, criterion, mae_metric
                 true = batch_y.detach()
                 loss = criterion(pred, true)
 
-                mae_loss = mae_metric(pred, true)
-
-                total_loss.append(loss.item())
+                
             
 
                 mae_loss = mae_metric(pred, true)

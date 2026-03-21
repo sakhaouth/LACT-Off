@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class MultiValueLSTM(nn.Module):
-    def __init__(self, input_size=12, hidden_size=64, num_layers=6, output_size=12, pred_len = 1):
+    def __init__(self, input_size=12, hidden_size=128, num_layers=3, output_size=12, pred_len = 1):
         super(MultiValueLSTM, self).__init__()
 
         self.hidden_size = hidden_size
@@ -17,27 +17,27 @@ class MultiValueLSTM(nn.Module):
         )
 
         # Fully connected output layer
-        self.fc = nn.Linear(hidden_size, output_size)
-        self.hn = None
-        self.cn = None
+        self.fc = nn.Linear(hidden_size, hidden_size)
+        self.fc1 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
 
         batch_size = x.size(0)
 
         # Initialize hidden and cell states
-        if self.hn == None and self.cn == None:
-            self.hn = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
-            self.cn = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
+        # if hn is None and cn is None:
+        hn = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
+        cn = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(x.device)
 
-        # LSTM forward
-        out, (hn, cn) = self.lstm(x, (self.hn, self.cn))
+        out, _ = self.lstm(x, (hn, cn))
 
         # Take last time step output
         out = out[:, -self.pred_len, :]
 
         # Fully connected layer
         out = self.fc(out)
-        self.hn = hn.detach()
-        self.cn = cn.detach()
+        out = self.fc1(out)
+        out = self.fc2(out)
+        out = out.unsqueeze(1)
         return out

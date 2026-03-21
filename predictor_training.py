@@ -164,6 +164,7 @@ for ii in range(args.itr):
             batch_y = batch_y.float().to(accelerator.device)
             batch_x_mark = batch_x_mark.float().to(accelerator.device)
             batch_y_mark = batch_y_mark.float().to(accelerator.device)
+            # print(f'info it {i}, shape {batch_x.shape} {batch_y.shape}')
             # decoder input
             #----------------------------TIME-LLM--------------------------------
             # dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float().to(
@@ -179,11 +180,15 @@ for ii in range(args.itr):
             # accelerator.backward(time_llm_loss)
             # time_llm_model_optim.step()
             #----------------------------LSTM--------------------------------
+            
             lstm_output = LSTM_model(batch_x)
+            # print(f'shape are {lstm_output.shape}, {batch_y.shape}')
             lstm_loss = criterion(lstm_output, batch_y)
             lstm_train_loss.append(lstm_loss.item())
             accelerator.backward(lstm_loss)
+            torch.nn.utils.clip_grad_norm_(LSTM_model.parameters(), 1.0)
             lstm_model_optim.step()
+            lstm_scheduler.step()
         #-----------------------------------Time-LLM-------------------------------------
         # time_llm_train_loss_av = np.average(time_llm_train_loss)
         # time_llm_vali_loss, time_llm_vali_mae_loss = vali(args, accelerator, Time_LLM_model, vali_data, vali_loader, criterion, mae_metric)
@@ -209,20 +214,20 @@ for ii in range(args.itr):
         print(f'Epoch loss is {lstm_train_loss_av}')
         lstm_vali_loss, lstm_vali_mae_loss = vali(args, accelerator, LSTM_model, vali_data, vali_loader, criterion, mae_metric,True)
         lstm_test_loss, lstm_test_mae_loss = vali(args, accelerator, LSTM_model, test_data, test_loader, criterion, mae_metric, True)
-        row = [lstm_train_loss, lstm_vali_loss, lstm_test_loss, lstm_test_mae_loss]
+        row = [lstm_train_loss_av, lstm_vali_loss, lstm_test_loss, lstm_test_mae_loss]
         dataFrame.loc[len(dataFrame)] = row
         print(f'Statistics is: lstm_vali_loss, lstm_vali_mae_loss {lstm_vali_loss, lstm_vali_mae_loss} and lstm_test_loss, lstm_test_mae_loss are {lstm_test_loss, lstm_test_mae_loss}')
         path = os.path.join(args.checkpoints,
                         setting + '-lstm-' + args.model_comment)
         os.makedirs(path, exist_ok=True)
         lstm_early_stopping(lstm_vali_loss, LSTM_model, path)
-        if lstm_early_stopping.early_stop:
-            print("Early stopping")
+        # if lstm_early_stopping.early_stop:
+        #     print("Early stopping")
             
-            break
+        #     break
         if args.lradj != 'TST':
             if args.lradj == 'COS':
-                lstm_scheduler.step()
+                # lstm_scheduler.step()
                 print("lr = {:.10f}".format(lstm_model_optim.param_groups[0]['lr']))
             else:
                 if epoch == 0:
