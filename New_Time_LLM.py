@@ -196,7 +196,7 @@ class Model(nn.Module):
             return dec_out[:, -self.pred_len:, :]
         return None
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+    def forecast(self, x_enc):
 
         x_enc = self.normalize_layers(x_enc, 'norm')
 
