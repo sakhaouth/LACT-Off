@@ -236,8 +236,11 @@ if __name__ == "__main__":
                 llm_loss.backward()
                 llm_optimizer.step()
                 llm_total_loss += llm_loss
-        lstm_vali_loss, lstm_vali_mae = vali(test_loader, model, criterion, mae_metric,device)
-        llm_vali_loss, llm_vali_mae = vali(test_loader, time_llm_model, criterion, mae_metric, device)
+        lstm_vali_loss =  lstm_vali_mae = llm_vali_loss = llm_vali_mae = None
+        if args.lstm == 1:
+            lstm_vali_loss, lstm_vali_mae = vali(test_loader, model, criterion, mae_metric,device)
+        if args.llm == 1:
+            llm_vali_loss, llm_vali_mae = vali(test_loader, time_llm_model, criterion, mae_metric, device)
         # row = [total_loss, valis_loss, vali_mae]
         row = [lstm_total_loss, lstm_vali_loss, lstm_vali_mae, llm_total_loss, llm_vali_loss, llm_vali_mae]
         df.loc[len(df)] = row
